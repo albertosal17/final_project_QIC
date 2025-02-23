@@ -1,0 +1,156 @@
+import numpy as np
+import pandas as pd
+
+from debugger_module import *
+
+############################################################################
+### UTILS
+
+def tensor_product(objects):
+    '''
+    Computes the tensor product of a list of numpy arrays.
+    Args:
+    objects: list of numpy arrays, the objects to be tensor producted (e.g. vectors or matrices)
+
+    If objects = [A, B, C], the function returns the tensor product A x B x C
+    memo: tensor product is commutative
+    '''
+    # Safety checks
+    if not isinstance(objects, list):
+        raise TypeError(f"Argument 'objects' must be a list, got {type(objects).__name__}")
+    for obj in objects:
+        if not isinstance(obj, np.ndarray):
+            raise TypeError(f"The elements inside the 'objects' argument must be an np.ndarray, got {type(obj).__name__}")
+    
+    # Computing the tensor product, one object at a time
+    result = objects[0] 
+    for i in range(1, len(objects)):
+        result = np.kron(result, objects[i])
+
+    return result
+
+
+def matrix_multiplication(objects):
+    '''
+    Computes the matrix product of a list of numpy arrays (matrices). Typically these matrices
+    represent the gates of a quantum circuit. It is useful when you want to apply transformations
+    in sequence on the whole circuit.
+
+    Args:
+    objects: list of numpy arrays, the objects to be tensor producted (e.g. vectors or matrices)
+
+    If objects = [A, B, C], the function returns a matrix representation of the operator C⋅B⋅A 
+    NOTE: the order of the matrices in the list is important: the first (index 0) should be the 
+    one that is applied first, the last (index -1) should be the one that is applied last
+    memo: matrix multiplication is non commutative in general
+    '''
+    # Safety checks
+    if not isinstance(objects, list):
+        raise TypeError(f"Argument 'objects' must be a list, got {type(objects).__name__}")
+    for obj in objects:
+        if not isinstance(obj, np.ndarray):
+            raise TypeError(f"The elements inside the 'objects' argument must be an np.ndarray, got {type(obj).__name__}")
+    
+    # Computing the matrix product, one object at a time, from first to last
+    result = objects[0]
+    for i in range(1, len(objects)):
+        result = np.dot(objects[i], result)
+
+    return result
+
+def Laplace_smoothing(distribution, N_trials, N_classes, filename=None, alpha=1.):
+    '''
+    Laplace smoothing for a discrete probability distribution.
+    The idea is to add a small amount of probability to all classes, so that no class has 
+    zero probability. This is done by adding a constant to the numerator and a multiple of 
+    the number of classes to the denominator.
+    Parameters:
+    - distribution: pd series
+        The original probability distribution
+    - N_trials: int
+        The total number of counts.
+        In the case of GRN estimation, this is the number of cells considered.
+    - N_classes: int
+        The number of classes.
+        In the case of GRN estimation, this is the number of sequences of genes observed.
+    - filename: str, optional
+        The name of the file where the smoothed pdf values will be saved.
+    - alpha: float, optional
+        The smoothing parameter. Default is 1 as it is the choice made by the paper's authors.
+    Returns:
+    - pdf_smoothed: array-like, shape=(N_classes,)
+        The smoothed probability distribution.
+    
+    '''
+    # Safety checks
+    if not isinstance(distribution, pd.Series):
+        raise TypeError(f"Argument 'distribution' must be a pandas Series, got {type(distribution).__name__}")
+    if not isinstance(N_trials, int):
+        raise TypeError(f"Argument 'N_trials' must be a int, got {type(N_trials).__name__}")
+    if not isinstance(N_classes, int):
+        raise TypeError(f"Argument 'N_classes' must be a int, got {type(N_classes).__name__}")
+    if not isinstance(alpha, float):
+        raise TypeError(f"Argument 'alpha' must be a float, got {type(alpha).__name__}")
+
+    #Laplace smoothing formula
+    pdf_smoothed = (distribution*N_trials+alpha) / (N_trials+N_classes*alpha)
+
+    # Ensure it's a pandas Series and preserve the index
+    if isinstance(pdf_smoothed, pd.DataFrame):  # If it's a DataFrame, extract the correct column
+        pdf_smoothed = pdf_smoothed.squeeze()
+        
+    #Save the smoothed pdf values to a file if requested
+    if filename:
+        pdf_smoothed.to_csv(f'./{filename}.csv', sep='\t', header=False)
+        checkpoint(f"Smoothed pdf values saved to {filename}.") 
+    return pdf_smoothed
+
+
+def binary_reshuffling_indeces(sequences_probability):
+    '''
+    This function reorder a set of binary sequences and their corresponding probabilities. 
+    The sequences are reordered by associating them with decimal numbers
+    and then oredering these numbers in ascending order.
+
+    Parameters: 
+    - sequences_probability: pandas Series
+        The probability distribution associated to a set of binary sequences.
+        The values of the series are the probabilities and the index are the binary sequences.
+        The binary sequences are strings of 0s and 1s.
+    '''
+    # Safety check
+    if not isinstance(sequences_probability, pd.Series):
+        raise TypeError(f"Argument 'sequences_probability' must be a pandas Series, got {type(sequences_probability).__name__}")
+                                                                                              
+    # Converting the binary sequences to integers 
+    int_list = [int(b, 2) for b in sequences_probability.index] 
+    
+    # Sorting the integers and corresponding values
+    sorted_indices = sorted(zip(int_list, sequences_probability.values)) # Sort the integers and keep the sorted values
+    sorted_values = [value for _, value in sorted_indices] 
+
+    # COnverting back the integers to binary sequences
+    sorted_binary_list = [bin(i)[2:].zfill(6) for i, _ in sorted_indices]
+    new_sequences_probability = pd.Series(sorted_values, index=sorted_binary_list) # New series to plot
+
+    return new_sequences_probability
+
+def generate_matrix(func, rows: int, cols: int, *args) -> np.ndarray:
+    '''
+    This function generates a matrix by applying a function to each element of the matrix.
+    The function func must take as input the row and column indices of the element and the additional arguments.
+    
+    Args:
+    func: function, the function to be applied to each element of the matrix
+    rows: int, the number of rows of the matrix
+    cols: int, the number of columns of the matrix
+    '''
+    return np.fromfunction(np.vectorize(lambda i, j: func(i, j, *args)), (rows, cols), dtype=int)
+
+
+def binary_labels(size: int) -> list[str]:
+    # Calculate the bit length for the largest number (size-1)
+    bit_length = (size - 1).bit_length()
+    
+    # Create the binary representations
+    return [format(i, f'0{bit_length}b') for i in range(size)]
