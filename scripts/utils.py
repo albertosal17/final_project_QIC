@@ -148,9 +148,80 @@ def generate_matrix(func, rows: int, cols: int, *args) -> np.ndarray:
     return np.fromfunction(np.vectorize(lambda i, j: func(i, j, *args)), (rows, cols), dtype=int)
 
 
-def binary_labels(size: int) -> list[str]:
+def binary_labels(size: int, big_endian = True) -> list[str]:
+    '''
+    This function associates to the entries of a vector state representing a multi-qubit system 
+    the binary strings that represents the states of the single qubits
+
+    The ordering can be big endian or little endian, depending on the application (Qiskit by default
+    used little endian ordering)
+
+    By default it uses big endian ordering, meaning that we interpret the left-most bit (MSB) in the 
+    string as the state of the first qubit (qubit 0), the bit next to it is the state of the 
+     second qubit, and so on..
+
+    Example:
+
+    ---------
+    For a 3-qubit system (dim = 2³ = 8), the function returns:
+
+    binary_labels(8, big_endian=True) -> ['000', '100', '010', '110', '001', '101', '011', '111']
+
+    This means:
+    - The first entry corresponds to |000⟩
+    - The second entry corresponds to |100⟩
+    - The third entry corresponds to |010⟩
+    - The fourth entry corresponds to |110⟩
+    - The fifth entry corresponds to |001⟩
+    - The sixth entry corresponds to |101⟩
+    - The seventh entry corresponds to |011⟩
+    - The eighth entry corresponds to |111⟩
+
+    If using big-endian ordering (as in Qiskit), the states would instead be indexed as:
+
+    ['000', '001', '010', '011', '100', '101', '110', '111']
+
+    This means:
+    - The first entry corresponds to |000⟩
+    - The second entry corresponds to |001⟩
+    - The third entry corresponds to |010⟩
+    - The fourth entry corresponds to |011⟩
+    - The fifth entry corresponds to |100⟩
+    - The sixth entry corresponds to |101⟩
+    - The seventh entry corresponds to |110⟩
+    - The eighth entry corresponds to |111⟩
+    '''
     # Calculate the bit length for the largest number (size-1)
     bit_length = (size - 1).bit_length()
     
-    # Create the binary representations
-    return [format(i, f'0{bit_length}b') for i in range(size)]
+    # Generate binary labels
+    if big_endian:
+        # Big-endian ordering
+        return [format(i, f'0{bit_length}b')[::-1] for i in range(size)]
+    else:
+        # Little-endian ordering (Qiskit style)
+        return [format(i, f'0{bit_length}b') for i in range(size)]
+    
+#test
+#print(binary_labels(8, big_endian=True))
+#print(binary_labels(8, big_endian=False))
+
+
+def big_to_little_endian_vector_state(vector: np.array) -> np.array:
+    '''
+    Reorders a vector representing a multi-qubit state from big-endian to little-endian by 
+    adjusting the positions of the vector elements corresponding to qubit states.
+
+    Args:
+        vector: List of vector entries (amplitudes) in big-endian order.
+
+    Returns:
+        List of vector entries in little-endian order.
+    '''
+    # Get the number of qubits from the size of the vector
+    n_qubits = int(np.log2(vector.shape[0]))
+    
+    # Reordering the vector's indices
+    little_endian_vector = np.array([vector[int(bin(i)[2:].zfill(n_qubits)[::-1], 2)] for i in range(vector.shape[0])])
+    
+    return little_endian_vector

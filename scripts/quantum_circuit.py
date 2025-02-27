@@ -187,9 +187,6 @@ def der_operator_for_psi_in(theta, row_index, col_index):
     
     n_qubits = theta.shape[0] #one qubit associated to each gene
     
-    if row_index == col_index:
-         return np.zeros((2**n_qubits, 2**n_qubits))
-    
     operator = []
     for mm in range(n_qubits): #per ogni addendo
         if mm != row_index:
