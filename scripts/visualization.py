@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-def plot_obs_vs_out_distr(observed_distr: pd.Series, output_distr: pd.Series, limit=0.):
+def plot_obs_vs_out_distr(observed_distr: pd.Series, output_distr: pd.Series, save = False, limit=0.):
 
     mask = observed_distr>limit
     observed_distr = observed_distr[mask]
@@ -19,28 +19,33 @@ def plot_obs_vs_out_distr(observed_distr: pd.Series, output_distr: pd.Series, li
     plt.title('Distributions of genes sequences')
     plt.grid(True)
     plt.legend()
+
+    if save: 
+        plt.savefig('../p_obsVSp_out_final.png')
     plt.show()
+
+
 
 def plot_loss_evolution(filename: str, color='navy', linestyle='-'):
         # Read the CSV file
     df = pd.read_csv(filename)  # Adjust 'your_file.csv' to your file path
 
-    column_name = 'loss'
+    column_name = 'loss_kl'
 
     # Access a specific column (e.g., the first column, index 0)
     column_data = df[column_name]
 
     column_data.plot(kind='line', color=color, linestyle=linestyle, label=column_name)
     plt.legend()
-    plt.xlabel('epoch')
-    plt.ylabel('loss')
-    plt.title('Loss evolution during training')
+    plt.xlabel('Epoch')
+    plt.ylabel('K-L divergence p_out vs p_obs')
+    plt.title('KL term of the loss evolution during training')
     plt.grid()
 
     plt.show()
 
 # # Example of usage:
-# plot_loss_evolution('..optimization_results.csv')
+# plot_loss_evolution('../optimization_results.csv')
                     
     
 

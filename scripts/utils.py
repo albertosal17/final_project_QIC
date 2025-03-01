@@ -53,12 +53,13 @@ def matrix_multiplication(objects):
     
     # Computing the matrix product, one object at a time, from first to last
     result = objects[0]
-    for i in range(1, len(objects)):
-        result = np.dot(objects[i], result)
+    if len(objects)>1:
+        for i in range(1, len(objects)):
+            result = np.dot(objects[i], result)
 
     return result
 
-def Laplace_smoothing(distribution, N_trials, N_classes, filename=None, alpha=1.):
+def Laplace_smoothing(distribution, N_trials, filename=None, alpha=1.):
     '''
     Laplace smoothing for a discrete probability distribution.
     The idea is to add a small amount of probability to all classes, so that no class has 
@@ -87,13 +88,16 @@ def Laplace_smoothing(distribution, N_trials, N_classes, filename=None, alpha=1.
         raise TypeError(f"Argument 'distribution' must be a pandas Series, got {type(distribution).__name__}")
     if not isinstance(N_trials, int):
         raise TypeError(f"Argument 'N_trials' must be a int, got {type(N_trials).__name__}")
-    if not isinstance(N_classes, int):
-        raise TypeError(f"Argument 'N_classes' must be a int, got {type(N_classes).__name__}")
+
     if not isinstance(alpha, float):
         raise TypeError(f"Argument 'alpha' must be a float, got {type(alpha).__name__}")
 
+    N_classes = distribution.shape[0]
+
     #Laplace smoothing formula
-    pdf_smoothed = (distribution*N_trials+alpha) / (N_trials+N_classes*alpha)
+    frequencies = distribution*N_trials 
+    pdf_smoothed = (frequencies + alpha) / (N_trials+N_classes*alpha)
+    new_N_trials = N_trials + N_classes*alpha
 
     # Ensure it's a pandas Series and preserve the index
     if isinstance(pdf_smoothed, pd.DataFrame):  # If it's a DataFrame, extract the correct column
@@ -103,7 +107,7 @@ def Laplace_smoothing(distribution, N_trials, N_classes, filename=None, alpha=1.
     if filename:
         pdf_smoothed.to_csv(f'./{filename}.csv', sep='\t', header=False)
         checkpoint(f"Smoothed pdf values saved to {filename}.") 
-    return pdf_smoothed
+    return pdf_smoothed, new_N_trials
 
 
 def binary_reshuffling_indeces(sequences_probability):

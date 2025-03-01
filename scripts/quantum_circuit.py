@@ -106,6 +106,7 @@ def correlation_layer_m(theta, control):
                 raise ValueError(f"Wrong shape: the shape is {operator.shape}, while it is expected to be expected {(2**n_qubits, 2**n_qubits)}")
 
     correlation_lk_operator = matrix_multiplication(control_rotation_gates)
+
     if correlation_lk_operator.shape != (2**n_qubits, 2**n_qubits):
         raise ValueError(f"Wrong shape: the shape is {correlation_lk_operator.shape}, while it is expected to be expected {(2**n_qubits, 2**n_qubits)}")
 
@@ -164,7 +165,7 @@ def der_correlation_layer_m(theta, control, row_index, col_index):
     elif control != row_index:
         return np.zeros((2**n_qubits, 2**n_qubits))
     else:
-        return der_control_r_y(theta[row_index,col_index], n_qubits, control = row_index, target = col_index)
+        return der_control_r_y(phi=theta[row_index,col_index], n_qubits=n_qubits, control = row_index, target = col_index)
 
 
 
@@ -187,23 +188,27 @@ def der_operator_for_psi_in(theta, row_index, col_index):
     
     n_qubits = theta.shape[0] #one qubit associated to each gene
     
-    operator = []
-    for mm in range(n_qubits): #per ogni addendo
-        if mm != row_index:
-            addend = np.zeros((2**n_qubits, 2**n_qubits))
-        else:
-            layers = [] 
-            layers.append(encoder_layer(theta))
+    if row_index == col_index:
+        return np.zeros((2**n_qubits, 2**n_qubits)) # No update on the diagonal angles
+    
+    else:
+        operator = []
+        for mm in range(n_qubits): #per ogni m (L_m con control qubit m)
+            if mm != row_index:
+                addend = np.zeros((2**n_qubits, 2**n_qubits))
+            else: #mm è uguale a row_index
+                layers = [] 
+                layers.append(encoder_layer(theta))
+                
+                for kk in range(n_qubits): #posizione l'operatore derivatoo nella giusta posizione
+                    if kk == mm:
+                        layers.append(der_correlation_layer_m(theta=theta, control=kk, row_index=row_index, col_index=col_index))
+                    else:
+                        layers.append(correlation_layer_m(theta=theta, control=kk))
+                addend = matrix_multiplication(layers)
             
-            for kk in range(n_qubits): #costruisco il prodotto definisce l'addendo
-                if kk == mm:
-                    layers.append(der_correlation_layer_m(theta, control=kk, row_index=row_index, col_index=col_index))
-                else:
-                    layers.append(correlation_layer_m(theta, control=kk))
-            addend = matrix_multiplication(layers)
-        
-        operator.append(addend)
-        
-    operator = sum(operator)
+            operator.append(addend)
+            
+        operator = sum(operator)
 
     return operator

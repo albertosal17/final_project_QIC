@@ -157,9 +157,5 @@ def der_control_r_y(phi, n_qubits, control, target):
             operators.append(I)
     derivative_operator = tensor_product(operators)
 
-    # Safety check
-    expected_shape = (2**n_qubits, 2**n_qubits)
-    if derivative_operator.shape != expected_shape:
-        raise ValueError(f"Wrong shape: the shape is {derivative_operator.shape}, while it is expected to be expected {expected_shape}")
-    
+
     return derivative_operator

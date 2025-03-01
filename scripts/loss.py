@@ -56,10 +56,10 @@ def loss_function(observed_pdf, output_pdf, theta, add_constraint):
         checkpoint(f"KL loss: {L_kl}", debug=True)
         checkpoint(f"Constraint loss: {L_cons}", debug=True)
 
-        return total_loss, rescale_factor
+        return L_kl, total_loss, rescale_factor
 
     else:
-        return L_kl, None
+        return L_kl, None, None
 
 
 def der_loss_cons(theta, row_index, col_index):
@@ -87,7 +87,7 @@ def der_loss_cons(theta, row_index, col_index):
         return 0.
 
 
-def der_loss_kl(sequences, theta, psi_in, psi_out, p_out, p_obs, row_index, col_index, debug):
+def der_loss_kl(sequences, theta, psi_in, psi_out, p_out, N_out_smooth, p_obs, row_index, col_index, debug):
     '''
     Computes the derivative of the Kullback-Leibler divergence term of the loss function with respect to one of the
     angles (elements of the matrix theta).
@@ -102,6 +102,9 @@ def der_loss_kl(sequences, theta, psi_in, psi_out, p_out, p_obs, row_index, col_
     row_index: int, the row index of the element of theta with respect to which we want to compute the derivative
     col_index: int, the column index of the element of theta with respect to which we want to compute the derivative
     '''
+    ### CONTROLLA SIA CORRETTA COME IDEA!!!
+    N_out = 24828  #SOLUZIONE PROVVISORIA, ANDREBBE PASSATO COME ARGOMENTO
+
     # Safety checks
     if not isinstance(sequences, pd.Index):
         raise TypeError(f"Argument 'sequences' must be a pandas Index, got {type(sequences).__name__}")
@@ -124,17 +127,26 @@ def der_loss_kl(sequences, theta, psi_in, psi_out, p_out, p_obs, row_index, col_
 
     # No update on the diagonal elements
     if row_index == col_index:
-        return 0
+        return 0.
     
     # Computing the derivative of the output state, with respect to the specific angle of interest
     # For this, we need to apply the derivative of the quantum circuit operator to the input state
     # The derivative of the quantum circuit operator is built using a function contained in module quantum_circuit.py
     der_psi_out = np.dot(der_operator_for_psi_in(theta, row_index=row_index, col_index=col_index), psi_in)
     checkpoint(f"der_psi_out computed (shape: {der_psi_out.shape})", debug=debug)
-                               
-    der_psi_out = der_psi_out[1:] #discarding the first element, associated with the state |000000>
     
-    expected_shape = (len(sequences),)
+    der_psi_out = big_to_little_endian_vector_state(der_psi_out)                           
+    
+    #CONTROLLA!! Rinormalizzo la derivata di psi_out!
+    der_psi_out = der_psi_out / np.linalg.norm(der_psi_out)
+
+    if not np.abs(np.linalg.norm(psi_out) - 1) < 1e-6:
+        raise ValueError(f"psi_out is not normalized: norm is {np.linalg.norm(psi_out)}")
+    if not np.abs(np.linalg.norm(der_psi_out) - 1) < 1e-6:
+        raise ValueError(f"der_psi_out is not normalized: norm is {np.linalg.norm(der_psi_out)}")
+
+
+    expected_shape = psi_out.shape
     if der_psi_out.shape != expected_shape:
         raise ValueError(f"Wrong shape: the shape of the derivative of the output state is {der_psi_out.shape}, while it is expected to be expected {expected_shape}")
     
@@ -148,15 +160,53 @@ def der_loss_kl(sequences, theta, psi_in, psi_out, p_out, p_obs, row_index, col_
     
     der_psi_out, psi_out = der_psi_out.real, psi_out.real
 
+
+
+
+    ########################################################################################
+    # SIMMETRIC DERIVATIVE COMPUTATION
+
+    #CONTROLLA!!!!! TOLGO QUESTA PARTE??
+    simm_der_psi_out = np.dot(der_operator_for_psi_in(theta, row_index=col_index, col_index=row_index), psi_in)
+    checkpoint(f"der_psi_out computed (shape: {simm_der_psi_out.shape})", debug=debug)
+    
+    simm_der_psi_out = big_to_little_endian_vector_state(simm_der_psi_out)                           
+    
+    #CONTROLLA!! Rinormalizzo la derivata di psi_out!
+    simm_der_psi_out = simm_der_psi_out / np.linalg.norm(simm_der_psi_out)
+
+    if not np.abs(np.linalg.norm(simm_der_psi_out) - 1) < 1e-6:
+        raise ValueError(f"der_psi_out is not normalized: norm is {np.linalg.norm(simm_der_psi_out)}")
+
+
+    expected_shape = psi_out.shape
+    if simm_der_psi_out.shape != expected_shape:
+        raise ValueError(f"Wrong shape: the shape of the derivative of the output state is {der_psi_out.shape}, while it is expected to be expected {expected_shape}")
+    
+    # Check if simm_der_psi_out is real
+    if not np.all(np.isreal(simm_der_psi_out)):
+        raise ValueError("The derivative output state of the quantum circuit is not real. The gradient cannot be computed.")
+    
+    simm_der_psi_out = simm_der_psi_out.real
+    
+    # Taking the average derivative between the two simmetric derivatives
+    der_psi_out = (der_psi_out + simm_der_psi_out)/2
+
+
+    ########################################################################################
+
+
+
+
     # Applying the formula for the derivative of the KL divergence term
     result = 0
     for idx in range(len(sequences)):
-        result += 2 * psi_out[idx] * der_psi_out[idx] * (np.log(p_out.iloc[idx] / p_obs.iloc[idx]) + 1)
+        result += 2 * psi_out[idx] * der_psi_out[idx] * (np.log( (p_out.iloc[idx]) / (p_obs.iloc[idx]) ) + 1) * (N_out/N_out_smooth)
     checkpoint(f"derivative w.r.t. theta_{row_index},{col_index} computed: {result}", debug=debug)
 
     return result 
 
-def der_loss_total(row_index, col_index, sequences, theta, psi_in, psi_out, p_out, p_obs, rescale_factor, add_constraint, debug):
+def der_loss_total(row_index, col_index, sequences, theta, psi_in, psi_out, p_out, N_out_smooth, p_obs, rescale_factor, add_constraint, debug):
     '''
     Computes the derivative of the total loss function with respect to one of the
     angles (elements of the matrix theta).
@@ -187,7 +237,7 @@ def der_loss_total(row_index, col_index, sequences, theta, psi_in, psi_out, p_ou
         if not isinstance(rescale_factor, float):
             raise TypeError(f"Argument 'rescale_factor' must be a float, got {type(rescale_factor).__name}")
                                                                             
-    der_L_kl = der_loss_kl(sequences, theta, psi_in, psi_out, p_out, p_obs, row_index, col_index, debug)
+    der_L_kl = der_loss_kl(sequences, theta, psi_in, psi_out, p_out, N_out_smooth, p_obs, row_index, col_index, debug)
 
     if add_constraint:
         der_L_c = der_loss_cons(theta, row_index, col_index)
@@ -199,9 +249,12 @@ def der_loss_total(row_index, col_index, sequences, theta, psi_in, psi_out, p_ou
         return der_total_loss
 
     else: 
+        if not isinstance(der_L_kl, float):
+            raise TypeError(f"'der_L_kl' must be a float, got {type(der_L_kl)}")
+                    
         return der_L_kl
 
-def gradient_loss(sequences, theta, psi_in, psi_out, p_out, p_obs, rescale_factor,add_constraint, debug):
+def gradient_loss(sequences, theta, psi_in, psi_out, p_out, N_out_smooth, p_obs, rescale_factor, add_constraint, debug):
     '''
     This function computes the matrix representing the gradient of the total loss function with respect to the
     elements of the matrix theta.
@@ -233,7 +286,7 @@ def gradient_loss(sequences, theta, psi_in, psi_out, p_out, p_obs, rescale_facto
     rows = n_genes
     cols = n_genes
 
-    gradient = generate_matrix(der_loss_total, rows, cols, sequences, theta, psi_in, psi_out, p_out, p_obs, rescale_factor, add_constraint, debug)
+    gradient = generate_matrix(der_loss_total, rows, cols, sequences, theta, psi_in, psi_out, p_out, N_out_smooth, p_obs, rescale_factor, add_constraint, debug)
 
     return gradient
 
