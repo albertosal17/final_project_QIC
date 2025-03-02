@@ -110,7 +110,6 @@ def control_r_y(phi, n_qubits, control, target):
     return first_term + second_term
     
 
-# Funzione che ti da l'operatore derivato c-R_y
 def der_control_r_y(phi, n_qubits, control, target):
     '''
     Derivative of the matrix representing the controlled-R_y gate, for a quantum circuit with many qubits.

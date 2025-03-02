@@ -70,14 +70,12 @@ def Laplace_smoothing(distribution, N_trials, filename=None, alpha=1.):
         The original probability distribution
     - N_trials: int
         The total number of counts.
-        In the case of GRN estimation, this is the number of cells considered.
-    - N_classes: int
-        The number of classes.
-        In the case of GRN estimation, this is the number of sequences of genes observed.
+        In the case of GRN estimation, this is the number of cells considered
     - filename: str, optional
-        The name of the file where the smoothed pdf values will be saved.
+        The name of the file where the smoothed pdf values will be saved. If None the data are not saved.
     - alpha: float, optional
         The smoothing parameter. Default is 1 as it is the choice made by the paper's authors.
+
     Returns:
     - pdf_smoothed: array-like, shape=(N_classes,)
         The smoothed probability distribution.
@@ -96,17 +94,19 @@ def Laplace_smoothing(distribution, N_trials, filename=None, alpha=1.):
 
     #Laplace smoothing formula
     frequencies = distribution*N_trials 
-    pdf_smoothed = (frequencies + alpha) / (N_trials+N_classes*alpha)
+    pdf_smoothed = (frequencies + alpha) / (N_trials + N_classes*alpha)
     new_N_trials = N_trials + N_classes*alpha
 
-    # Ensure it's a pandas Series and preserve the index
-    if isinstance(pdf_smoothed, pd.DataFrame):  # If it's a DataFrame, extract the correct column
+    # Ensure it's a pandas Series and not dataframe
+    if isinstance(pdf_smoothed, pd.DataFrame):  # If it's a single column DataFrame, extract the coulumn as a series
+        checkpoint("Laplace smoothing of the pdf resulted in a dataframe. Squeezing to a series.")
         pdf_smoothed = pdf_smoothed.squeeze()
         
     #Save the smoothed pdf values to a file if requested
     if filename:
-        pdf_smoothed.to_csv(f'./{filename}.csv', sep='\t', header=False)
+        pdf_smoothed.to_csv(f'../results/{filename}.csv', sep='\t', header=False)
         checkpoint(f"Smoothed pdf values saved to {filename}.") 
+
     return pdf_smoothed, new_N_trials
 
 
@@ -139,6 +139,7 @@ def binary_reshuffling_indeces(sequences_probability):
 
     return new_sequences_probability
 
+
 def generate_matrix(func, rows: int, cols: int, *args) -> np.ndarray:
     '''
     This function generates a matrix by applying a function to each element of the matrix.
@@ -149,7 +150,8 @@ def generate_matrix(func, rows: int, cols: int, *args) -> np.ndarray:
     rows: int, the number of rows of the matrix
     cols: int, the number of columns of the matrix
     '''
-    return np.fromfunction(np.vectorize(lambda i, j: func(i, j, *args)), (rows, cols), dtype=int)
+
+    return np.fromfunction(np.vectorize(lambda i, j: func(int(i), int(j), *args)), (rows, cols), dtype=float)
 
 
 def binary_labels(size: int, big_endian = True) -> list[str]:
@@ -162,7 +164,8 @@ def binary_labels(size: int, big_endian = True) -> list[str]:
 
     By default it uses big endian ordering, meaning that we interpret the left-most bit (MSB) in the 
     string as the state of the first qubit (qubit 0), the bit next to it is the state of the 
-     second qubit, and so on..
+    second qubit, and so on.. This is the representation that we get from the way we have built the 
+    matrix operator associated with the quantum circuit.
 
     Example:
 
@@ -206,9 +209,6 @@ def binary_labels(size: int, big_endian = True) -> list[str]:
         # Little-endian ordering (Qiskit style)
         return [format(i, f'0{bit_length}b') for i in range(size)]
     
-#test
-#print(binary_labels(8, big_endian=True))
-#print(binary_labels(8, big_endian=False))
 
 
 def big_to_little_endian_vector_state(vector: np.array) -> np.array:
