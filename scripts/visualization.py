@@ -1,6 +1,10 @@
 import matplotlib.pyplot as plt
+import igraph as ig
 import numpy as np
 import pandas as pd
+
+from utils import return_unique_edges
+
 
 color_cycle = plt.cm.Set1.colors  # Setting a predefined colormap for the plots
 
@@ -41,18 +45,29 @@ def plot_obs_vs_out_distr(observed_distr: pd.Series, output_distr: pd.Series, qi
     new_output_distr = pd.Series({idx: output_distr.get(idx, 0) for idx in selected_indices}, index=selected_indices)
 
     # Plotting
-    new_output_distr.plot(kind='bar', width=0.8, label='p_out', color='red', edgecolor='tomato', alpha=0.5)
-    observed_distr.plot(kind='bar', width=0.8, label='p_obs', color='blue', edgecolor='lightblue', alpha=0.5)
-
+    x = np.arange(len(selected_indices))
     if qiskit_distr is not None:
-        new_qiskit_distr = pd.Series({idx: qiskit_distr.get(idx, 0) for idx in selected_indices}, index=selected_indices)
-        new_qiskit_distr.plot(kind='bar', width=0.8, label='p_qiskit', color='green', edgecolor='lightgreen', alpha=0.5)
+            # Retrieving the qiskit distribution sequences corresponding to the filtered observed distribution sequences
+            new_qiskit_distr = pd.Series({idx: qiskit_distr.get(idx, 0) for idx in selected_indices}, index=selected_indices)
+            
+            #plotting            
+            bar_width = 0.3
+            plt.bar(x, new_qiskit_distr, width=bar_width, label="p_qiskit", color="green", edgecolor="green", alpha=0.6)
+            plt.bar(x + bar_width, new_output_distr, width=bar_width, label="p_out", color="red", edgecolor="tomato", alpha=0.6)
+            plt.bar(x + 2 * bar_width, observed_distr, width=bar_width, label="p_obs", color="blue", edgecolor="lightblue", alpha=0.6)
+            plt.title('Distributions of genes sequences \n(experimental vs. numerical simulation vs. qiskit simulation)')
 
-    # Plot settings
-    plt.xticks(rotation=90)
+    else:
+        bar_width = 0.4
+        plt.bar(x + bar_width, new_output_distr, width=bar_width, label="p_out", color="red", edgecolor="tomato", alpha=0.6)
+        plt.bar(x + 2 * bar_width, observed_distr, width=bar_width, label="p_obs", color="blue", edgecolor="lightblue", alpha=0.6)
+        plt.title('Distributions of genes sequences \n(experimental vs. numerical simulation)')
+
+
+    # Fix x-axis labels
+    plt.xticks(x + bar_width, selected_indices, rotation=45)  # Center the labels and rotate for readability
     plt.ylabel('Probability')
     plt.xlabel('Gene sequences')
-    plt.title('Distributions of genes sequences')
     plt.grid(True)
     plt.legend()
 
@@ -113,8 +128,10 @@ def plot_theta_i_j_evolution(filename: str, indices: list, linestyle='-', save=T
     filename : str
         The path to the CSV file containing the angles evolution data.
     indices: list
-        list of tuples of two integers. These integeres represent the row and column of a specific angle in the 
-        matrix of parameters to be learned theta.
+        dictionary. The keys are tuples of two integers univoquely associated to two genes. 
+        These integeres represent the row and column of a specific angle in the matrix of 
+        parameters theta. The values of the dictionary are tuples with the associated names 
+        of the genes.
     color : str
         The color of the plot line.
     linestyle : str, optional
@@ -130,67 +147,148 @@ def plot_theta_i_j_evolution(filename: str, indices: list, linestyle='-', save=T
     - Assumes the CSV file contains columns named in the format 'θ_i,j'.
 
     """ 
+    plt.figure(figsize=(10,6))
     nn=0 #counter
-    for element in indices:
-        index_i, index_j  = element
-
+    for tuple_indices, tuple_names in indices.items():
+        index_i, index_j  = tuple_indices
+        
         # Read the CSV file and retrieving the evolution data for the angle element in position (index_i,index_j)
         df = pd.read_csv(filename)  
         column_name = 'θ_' + str(index_i) + ',' + str(index_j)
         theta_i_j_values = df[column_name]
 
-        # plotting
-        theta_i_j_values.plot(kind='line', color=color_cycle[nn], linestyle=linestyle, label=column_name)
-        nn+=1
-
+        # plot only if meaningful angles
+        boolean_mask = np.abs(theta_i_j_values) > 0.03
+        if boolean_mask.sum()>1:
+            # plotting
+            theta_i_j_values.plot(kind='line', color=color_cycle[nn], linestyle=linestyle, label=tuple_names)
+            nn+=1
     plt.legend()
     plt.xlabel('Epoch')
-    plt.ylabel('Angles $\theta_{i,j}$'+' (rad)')
+    plt.ylabel(r'Angle $\theta_{i,j}$ (rad)')
     plt.title('Parameters evolution during training')
     plt.grid()
 
     if show:
         if save: 
-            plt.savefig(f'../results/theta_evolution{indices}.svg', format='svg', bbox_inches='tight')
+            plt.savefig(f'../results/theta_evolution.svg', format='svg', bbox_inches='tight')
 
         plt.show()
 
-def adjency_matrix_heatmap(theta, save=True):
-
-    c = plt.imshow(theta, cmap='RdYlGn', vmin = theta.min(), vmax= theta.max(),  interpolation='nearest')
-
-    if save: 
-        plt.savefig(f'../results/heatmap_theta.svg', format='svg', bbox_inches='tight')  
+def adjency_matrix_heatmap(matrix, genes_names, filename='heatmap_theta',save=True):
+    """
+    Generates and displays a heatmap for the matrix of parameters theta.
     
-    plt.colorbar(c) 
+    Args:
+    matrix : np.ndarray
+        A 2D square numpy array representing the adjacency matrix.
+    genes_names : np.ndarray
+        A 1D numpy array containing the names of the genes (used as labels for x and y axes).
+    filename : str, optional
+        The filename to save the heatmap as an SVG file (default is 'heatmap_theta').
+    save : bool, optional
+        If True, saves the heatmap as an SVG file in the '../results/' directory (default is True).
+    
+    Notes:
+    ------
+    - The diagonal elements of the matrix (where `matrix == 0`) are masked and shown in black.
+    - The colormap used is `RdYlGn`.
+    - The values of the matrix are displayed on top of the heatmap with 3 decimal precision.
+    """    
+    plt.figure(figsize=(8,8))
+    # Setting the colormap to be used
+    cmap = plt.cm.RdYlGn  
+
+    # discarding diagonal values and set their color to black
+    masked_array = np.ma.masked_where(matrix == 0., matrix)
+    cmap.set_bad(color='black')
+
+    # plotting heatmap
+    plt.imshow(masked_array, cmap=cmap, vmin = matrix.min(), vmax= matrix.max(),  interpolation='nearest')
+
+    #displaying values on top of the heatmap
+    for ii in range(matrix.shape[0]):
+        for jj in range(matrix.shape[1]):
+            plt.text(jj, ii, str(np.round(matrix[ii, jj],3)), ha='center', va='center', color='black', fontsize=10)
+    
+    plt.colorbar(shrink=0.65)  # Show color scale
+    plt.xticks(range(genes_names.shape[0]), list(genes_names))
+    plt.yticks(range(genes_names.shape[0]), list(genes_names))
+    plt.title('Coupling angles after optimization (radians)')
+    plt.xlabel('Gene names')
+    plt.ylabel('Gene names')
+
+    # Eventually save the plot
+    if save: 
+        plt.savefig(f'../results/{filename}.svg', format='svg', bbox_inches='tight')  
+
     plt.show()
 
-# # Example of usage:
-# plot_loss_evolution('../optimization_results.csv')
+def plot_GRN(theta, genes_names, save=True):
+    """
+    Plots a Gene Regulatory Network (GRN) from an adjacency matrix of coupling angles.
+    
+    Args:
+    theta : np.ndarray
+        The matrix with the coupling angles between qubits/genes
+    genes_names : np.ndarray
+        A 1D numpy array containing gene names, used as vertex labels.
+    save : bool, optional
+        If True, saves the plot as an SVG file in the '../results/' directory (default is True).
+    
+    Notes:
+    ------
+    - The edges are weighted by the average of symmetric matrix entries: (theta[i,j] + theta[j,i]) / 2.
+    - Green edges represent positive coupling angles, and red edges represent negative ones.    
+    """
+    # Discarding simmetric the pairs of genes ("edges")
+    # e.g. for [0,1] and [1,0] we keep only [1,0]
+    unique_edges = return_unique_edges(genes_names)
+
+    # For each unique pair, compute the average value between the two simmetric entries
+    # e.g. for [0,1] and [1,0] we keep only [0,1] and associate to it the angle (theta[0,1]+theta[1,0])/2
+    edges_theta_dict = {}
+    for edge in unique_edges:
+        i,j=edge
+        edges_theta_dict[edge]=(theta[i,j]+theta[j,i])/2
+    
+    color_cycle = plt.cm.Pastel1.colors  # Setting a predefined colormap for the plots
+
+    # Construct a graph with 5 vertices
+    n_vertices = 6
+    g = ig.Graph(n_vertices, unique_edges)
+
+    # Set attributes for the nodes, and edges
+    g.vs["name"] = genes_names
+    g.es["strengths"] = np.array(list(edges_theta_dict.values()))
+
+    # Plot in matplotlib
+    # Note that attributes can be set globally (e.g. vertex_size), or set individually using arrays (e.g. vertex_color)
+    fig, ax = plt.subplots(figsize=(5,5))
+    ig.plot(
+        g,
+        target=ax,
+        layout="circle", # print nodes in a circular layout
+        vertex_size=50,
+        vertex_color=color_cycle[:n_vertices],
+        vertex_frame_width=2,
+        vertex_frame_color="black",
+        vertex_label=g.vs["name"],
+        vertex_label_size=7.0,
+        edge_width=np.dot(g.es["strengths"],10),
+        edge_color=["green" if theta_ij>0 else "red" for theta_ij in g.es["strengths"]]
+    )
+    plt.title("Gene Regulatory Network recovered")
+
+    if save:
+        plt.savefig(f'../results/GRN.svg', format='svg', bbox_inches='tight')  
+    plt.show()
 
 
 
 
-# # Example of usage:
-# cmap = plt.cm.Set1
-# num_colors = 11  # specify the number of colors you want
-# colors = [cmap(i / num_colors) for i in range(num_colors)]
-# plot_theta_i_j_evolution('..optimization_results.csv', 0, 1,color=colors[0], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 1, 0, color=colors[0],linestyle='dashed', single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 0, 2,color=colors[1], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 2, 0, color=colors[1], linestyle='dashed', single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 0, 3,color=colors[2], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 3, 0, color=colors[2], linestyle='dashed', single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 3, 1,color=colors[3], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 1, 3, color=colors[3], linestyle='dashed', single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 4, 5,color=colors[4], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 5, 4, color=colors[4], linestyle='dashed', single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 0, 0,color=colors[5], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 1, 1, color=colors[6], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 2, 2,color=colors[7], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 3, 3, color=colors[8], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 4, 4,color=colors[9], single_plot=False)
-# plot_theta_i_j_evolution('..optimization_results.csv', 5, 5, color=colors[10], single_plot=False)
 
-# plt.show()
+
+
+
 

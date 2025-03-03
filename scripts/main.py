@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import time
 
-from utils import Laplace_smoothing, binary_reshuffling_indeces
+from utils import Laplace_smoothing, binary_reshuffling_indeces, return_unique_edges
 from debugger_module import checkpoint
 from quantum_circuit import initial_ground_state, output_state, output_probability_distribution
 from loss import loss_function, gradient_loss
@@ -11,7 +11,7 @@ from visualization import plot_obs_vs_out_distr, plot_loss_evolution, plot_theta
 from qiskit_quantum_circuit import qiskit_quantum_circuit_GRN, run_Aer_simulation
 
 
-plt.rcParams.update({'font.size': 15}) #setting font size for the plots
+plt.rcParams.update({'font.size': 17}) #setting font size for the plots
 color_cycle = plt.cm.Set1.colors  # Setting a predefined colormap for the plots
 markers = ['o', 's', 'D', '^', '|','v', '<', '>', 'p', 'h', 'H', '+', 'x', 'd', '|', '_']
 
@@ -55,10 +55,10 @@ theta_in = np.diag(diagonal_theta)
 ### OPTIMIZATION PROCESS: FINDING THE BEST THETA
 
 # Setting algorithm's parameters
-iterations = 1000 
+iterations = 200 
 learn_rate = 0.05 # Learning rate (AS PAPER)
-loss_treshold = 1e-8
-n_plots = 4 # number of times the distribution is displayed along the execution
+loss_treshold = 1e-8 # set None if you do not want to use it
+n_plots = 1 # number of times the distribution is displayed along the execution
 
 nr_qubits = theta_in.shape[0] # One qubit per gene
 n_cells = 24828 # From experimental data
@@ -110,7 +110,7 @@ for iter in range(iterations):
     
     # Checking if convergence of the algorithm is reached: loss update smaller than fixed thrreshold.
     # Otherwise iterate again, until max number of iterations is reached
-    if iter>0:
+    if loss_treshold is not None and iter>0:
         if add_constraint: #use the total loss 
             if iter>0 and ( np.abs( loss_total - df.loc[iter-1]['loss_total'] ) < loss_treshold ):
                 checkpoint("Loss threshold achieved")
@@ -155,22 +155,31 @@ df.to_csv(results_filename)
 # Plot and save results
 plot_obs_vs_out_distr(observed_distr=p_obs_smooth, output_distr=p_out_smooth, limit=0.01, save=True, image_name="p_obsVSp_out_final") #final plot
 plot_loss_evolution(filename=results_filename)
-indices=[(1,0), (0,1), (2,2), (3,4)]
-plot_theta_i_j_evolution(filename=results_filename, indices=indices)
+
+
+# Computing a dictionary with each pair of genes names associated to two 
+# unique integers associated with the specific genes
+unique_edges = return_unique_edges(genes_names)
+# For each unique pair, associate the names
+edges_indices_to_names = {}
+for edge in unique_edges:
+    i,j=edge
+    edges_indices_to_names[edge]=(genes_names[i], genes_names[j])
+
+plot_theta_i_j_evolution(filename=results_filename, indices=edges_indices_to_names)
 
 
 
 #############################################################################################
 ### CIRCUIT SIMULATION, WITH OPTIMIZED THETA
 if ok_simultation:
-
-    best_theta = theta # The best theta found during the optimization process
-
     ############################################
     ### BUILDING THE CIRCUIT
+    best_theta = theta # The best theta found during the optimization proces
     qc = qiskit_quantum_circuit_GRN(theta=best_theta, draw=False) 
-
+    checkpoint("Qiskit circuit built, starting the simulation..", debug=debug)
     counts = run_Aer_simulation(qc)
+    checkpoint("Simulation end", debug=debug)
 
     if '000000' in counts:
         counts.pop('000000')  # We are not interested in the case in which all genes are not active
@@ -179,15 +188,18 @@ if ok_simultation:
     counts_values = np.array(list(counts.values()))
     counts_keys = np.array(list(counts.keys()))
 
-    # Computing the probabilities associated to the counts and applying Laplace smoothing to the distribution
-    p_qiskit, _ = Laplace_smoothing(counts_values, N_trials=counts_values.sum())
-    #CHECK NORMALIZATION
-    if np.abs(p_qiskit.sum() - 1) > 1e-10:
-        raise ValueError('The output distribution is not normalized')
+    p_qiskit = counts_values / np.sum(counts_values)
 
     #Converting the distribution to a pandas Series is needed to use binary_reshuffling_indeces function
     p_qiskit = pd.Series(p_qiskit, index=counts_keys)
     p_qiskit = binary_reshuffling_indeces(p_qiskit)
-    
-    plot_obs_vs_out_distr(observed_distr=p_obs_smooth, output_distr=p_out_smooth, qiskit_distr=p_qiskit, limit=0.01, save=True, image_name="p_qiskitVSp_obsVSp_out") 
+
+    # Computing the probabilities associated to the counts and applying Laplace smoothing to the distribution
+    p_qiskit_smooth, _ = Laplace_smoothing(p_qiskit, N_trials=counts_values.sum(), filename="p_qiskit_smoothed")
+    #CHECK NORMALIZATION
+    if np.abs(p_qiskit_smooth.sum() - 1) > 1e-8:
+        raise ValueError('The output distribution is not normalized')
+    checkpoint("Probability distribution of sequences computed", debug=debug)
+
+    plot_obs_vs_out_distr(observed_distr=p_obs_smooth, output_distr=p_out_smooth, qiskit_distr=p_qiskit_smooth, limit=0.01, save=True, image_name="p_qiskitVSp_obsVSp_out") 
 

@@ -82,9 +82,9 @@ def Laplace_smoothing(distribution, N_trials, filename=None, alpha=1.):
     
     '''
     # Safety checks
-    if not isinstance(distribution, pd.Series):
-        raise TypeError(f"Argument 'distribution' must be a pandas Series, got {type(distribution).__name__}")
-    if not isinstance(N_trials, int):
+    if not isinstance(distribution, (pd.Series, np.ndarray)):
+        raise TypeError(f"Argument 'distribution' must be a pandas Series or numpy ndarray, got {type(distribution).__name__}")
+    if not isinstance(N_trials, (int, np.int64)):
         raise TypeError(f"Argument 'N_trials' must be a int, got {type(N_trials).__name__}")
 
     if not isinstance(alpha, float):
@@ -229,3 +229,70 @@ def big_to_little_endian_vector_state(vector: np.array) -> np.array:
     little_endian_vector = np.array([vector[int(bin(i)[2:].zfill(n_qubits)[::-1], 2)] for i in range(vector.shape[0])])
     
     return little_endian_vector
+
+
+def retrieve_last_theta(results_filename):
+    """
+    Extracts the final optimized theta matrix from the results of the optimization,
+    contained in a CSV file.
+    
+    Args:
+    results_filename : str
+        Path to the CSV file containing optimization results.
+    
+    Returns:
+    theta : np.ndarray
+        A square matrix representing the coupling angles after optimization.
+    
+    Notes:
+    - The last row of the file corresponds to the final optimization step.
+    """
+    data = pd.read_csv(results_filename)
+
+    # Retrieving the optimized theta (last iteration result)
+    last_iter_results = data.iloc[-1] #last row
+    last_iter_results.pop('loss_total') #remove unnecessary data
+    last_iter_results.pop('loss_kl') #remove unnecessary data
+    theta_series = last_iter_results.iloc[1:] #remove index of the row
+
+    theta = theta_series.values
+    n_genes = int(np.sqrt(theta.shape[0])) #theta should be a matrix n_genes times n_genes
+    checkpoint(f"Number of genes: {n_genes}")
+    theta = theta.reshape(n_genes, n_genes)
+
+    return theta
+
+def return_unique_edges(genes_names):
+    """
+    Generates a list of unique index associated to gene pairs (edges), from a list of gene names.
+    
+    Args:
+    genes_names : np.ndarray
+        A 1D numpy array containing gene names as strings.
+    
+    Returns:
+    unique_edges : list of tuples
+        A list of unique directed edges (i, j) where i < j, ensuring each edge appears only once.
+    
+    Notes:
+    - Removes self-loops (pairs where i == j).
+    """
+    # Identify each gene with an integer 
+    genes_indices = np.arange(genes_names.shape[0])
+
+    # COmputing all the possible pairs of different genes
+    edges = np.array(np.meshgrid(genes_indices, genes_indices)).T.reshape(-1,2)
+    mask = [i[0]!=i[1] for i in edges] # only pairs of different genes
+    edges = edges[mask]
+
+    # Discarding simmetric the pairs of genes
+    # e.g. for [0,1] and [1,0] we keep only [1,0]
+    unique_edges = []
+    for i in edges:
+        gene1, gene2 = i
+        genes_tuple = (gene1,gene2)
+        simmetric_genes_tuple = (gene2, gene1)
+        if simmetric_genes_tuple not in unique_edges:  # Check if reverse pair exists
+            unique_edges.append(genes_tuple)
+        
+    return unique_edges

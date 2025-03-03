@@ -235,7 +235,7 @@ def output_probability_distribution(psi_out: np.ndarray, nr_cells: int, debug: b
     #checkpoint(f"P_out renormalized: sum is {p_out.sum()}", debug = debug)
 
     # Laplace smoothing on p_out
-    p_out_smooth, N_out_smooth = Laplace_smoothing(distribution=p_out, N_trials=nr_cells)
+    p_out_smooth, N_out_smooth = Laplace_smoothing(distribution=p_out, N_trials=nr_cells, filename="p_out_smoothed")
     checkpoint(f"Smoothing of p_out computed (check normalization: {p_out_smooth.sum()})", debug = debug)
 
 

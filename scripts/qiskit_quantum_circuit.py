@@ -4,6 +4,10 @@ from qiskit.visualization import plot_histogram
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+
+from utils import retrieve_last_theta, Laplace_smoothing, binary_reshuffling_indeces
+
 
 def qiskit_quantum_circuit_GRN(theta, draw=False):
     """
@@ -47,6 +51,8 @@ def qiskit_quantum_circuit_GRN(theta, draw=False):
             if pp != kk:
                 qc.cry(theta[kk,pp], kk, pp) #Documentation: cry(theta, control, target)
         qc.barrier()
+
+    qc.measure(range(nr_qubits), range(nr_qubits))  # Measure both qubits
 
     if draw:
         qc.draw("mpl")  
